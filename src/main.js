@@ -17,23 +17,36 @@ const wait = async (time) => {
 };
 
 Actor.main(async () => {
+    const input = await Actor.getInput();
+
+    if (!input || typeof input !== 'object') {
+        throw new Error('Actor input is missing. Provide at least `url` and `proxyOptions`.');
+    }
+
     const {
         url,
         viewportHeight = 768,
         viewportWidth = 1366,
         slowDownAnimations,
-        waitToLoadPage,
+        waitToLoadPage = 0,
         cookieWindowSelector,
-        frameRate,
-        recordingTimeBeforeAction,
+        frameRate = 7,
+        recordingTimeBeforeAction = 1000,
         scrollDown = true,
-        scrollPercentage,
+        scrollPercentage = 10,
         clickSelector,
-        recordingTimeAfterClick,
+        recordingTimeAfterClick = 0,
         lossyCompression,
         loslessCompression,
         proxyOptions,
-    } = await Actor.getInput();
+    } = input;
+
+    if (!url || typeof url !== 'string') {
+        throw new Error('Input field `url` is required and must be a string.');
+    }
+
+    // Check in case the input URL does not include a protocol.
+    const validUrl = /^https?:\/\//i.test(url) ? url : `https://${url}`;
 
     const proxyConfiguration = await Actor.createProxyConfiguration(proxyOptions);
 
@@ -55,12 +68,13 @@ Actor.main(async () => {
                 },
             },
         },
-        requestHandlerTimeoutSecs: 300,
+        // Long pages can legitimately take several minutes to capture frame-by-frame.
+        requestHandlerTimeoutSecs: 900,
         navigationTimeoutSecs: 90,
         preNavigationHooks: [
             async ({ page }, gotoOptions) => {
                 if (slowDownAnimations) {
-                    slowDownAnimationsFn(page);
+                    await slowDownAnimationsFn(page);
                 }
 
                 gotoOptions.waitUntil = 'networkidle2';
@@ -77,7 +91,7 @@ Actor.main(async () => {
             // remove cookie window if specified
             if (cookieWindowSelector) {
                 try {
-                    await page.waitForSelector(cookieWindowSelector);
+                    await page.waitForSelector(cookieWindowSelector, { timeout: 5000 });
 
                     log.info('Removing cookie pop-up window');
                     await page.$eval(cookieWindowSelector, (el) => el.remove());
@@ -107,7 +121,7 @@ Actor.main(async () => {
             // click element and record the action
             if (clickSelector) {
                 try {
-                    await page.waitForSelector(clickSelector);
+                    await page.waitForSelector(clickSelector, { timeout: 5000 });
                     log.info(`Clicking element with selector ${clickSelector}`);
                     await page.click(clickSelector);
                 } catch (err) {
@@ -117,8 +131,9 @@ Actor.main(async () => {
                 await record(page, gif, recordingTimeAfterClick, frameRate);
             }
 
+            const gifBufferPromise = getGifBuffer(gif, chunks);
             gif.finish();
-            const gifBuffer = await getGifBuffer(gif, chunks);
+            const gifBuffer = await gifBufferPromise;
 
             const urlObj = new URL(validUrl);
             const siteName = urlObj.hostname;
@@ -162,8 +177,6 @@ Actor.main(async () => {
         },
     });
 
-    // check in case if input url doesn't have 'https://' part
-    const validUrl = url.includes('http') ? url : `https://${url}`;
     await Actor.setStatusMessage(`Opening page: ${validUrl}`);
     const initRequest = { url: validUrl };
 

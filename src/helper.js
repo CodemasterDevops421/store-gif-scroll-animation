@@ -5,6 +5,8 @@ import imagemin from 'imagemin';
 import imageminGiflossy from 'imagemin-giflossy';
 import imageminGifsicle from 'imagemin-gifsicle';
 
+const wait = async (time) => new Promise((resolve) => setTimeout(resolve, time));
+
 const takeScreenshot = async (page) => {
     log.info('Taking screenshot');
 
@@ -37,11 +39,25 @@ const gifAddFrame = async (screenshotBuffer, gif) => {
 };
 
 export const record = async (page, gif, recordingTime, frameRate) => {
-    const frames = (recordingTime / 1000) * frameRate;
+    const captureDuration = Number(recordingTime) || 0;
+    const fps = Math.max(1, Number(frameRate) || 1);
+
+    if (captureDuration <= 0) return;
+
+    const frameInterval = Math.round(1000 / fps);
+    const frames = Math.max(1, Math.ceil(captureDuration / frameInterval));
 
     for (let itt = 0; itt < frames; itt++) {
+        const frameStartedAt = Date.now();
         const screenshotBuffer = await takeScreenshot(page);
         await gifAddFrame(screenshotBuffer, gif);
+
+        const elapsed = Date.now() - frameStartedAt;
+        const remainingDelay = frameInterval - elapsed;
+
+        if (remainingDelay > 0 && itt < frames - 1) {
+            await wait(remainingDelay);
+        }
     }
 };
 
@@ -51,7 +67,7 @@ export const getScrollParameters = async ({ page, viewportHeight, scrollPercenta
     const scrollTop = await page.evaluate(() => document.documentElement.scrollTop);
 
     const initialPosition = viewportHeight + scrollTop;
-    const scrollByAmount = Math.round(viewportHeight * scrollPercentage / 100);
+    const scrollByAmount = Math.max(1, Math.round(viewportHeight * scrollPercentage / 100));
 
     return {
         pageHeight,
@@ -67,21 +83,32 @@ export const scrollDownProcess = async ({ page, gif, viewportHeight, scrollPerce
     while (pageHeight > scrolledUntil) {
         const screenshotBuffer = await takeScreenshot(page);
 
-        gifAddFrame(screenshotBuffer, gif);
+        await gifAddFrame(screenshotBuffer, gif);
 
         log.info(`Scrolling down by ${scrollByAmount} pixels`);
         await page.evaluate((scrollByAmount) => {
             window.scrollBy(0, scrollByAmount);
         }, scrollByAmount);
 
-        scrolledUntil += scrollByAmount;
+        const scrollTopAfterScroll = await page.evaluate(() => document.documentElement.scrollTop);
+        const currentViewportBottom = viewportHeight + scrollTopAfterScroll;
+
+        if (currentViewportBottom <= scrolledUntil) {
+            log.warning('Page did not scroll any further, stopping scroll capture early.');
+            break;
+        }
+
+        scrolledUntil = currentViewportBottom;
     }
+
+    const finalScreenshotBuffer = await takeScreenshot(page);
+    await gifAddFrame(finalScreenshotBuffer, gif);
 };
 
 export const getGifBuffer = (gif, chunks) => {
     return new Promise((resolve, reject) => {
-        gif.on('end', () => resolve(Buffer.concat(chunks)));
-        gif.on('error', (error) => reject(error));
+        gif.once('end', () => resolve(Buffer.concat(chunks)));
+        gif.once('error', (error) => reject(error));
     });
 };
 
