@@ -3,14 +3,16 @@ import { PuppeteerCrawler } from 'crawlee';
 import GifEncoder from 'gif-encoder';
 
 import {
-    record,
-    scrollDownProcess,
+    capturePage,
     getGifBuffer,
     compressGif,
+    saveAsset,
     saveGif,
     slowDownAnimationsFn,
     resolveCaptureConfig,
     createDatasetResult,
+    encodeVideoFromFrames,
+    getOutputFormatMetadata,
 } from './helper.js';
 
 const wait = async (time) => {
@@ -41,6 +43,7 @@ Actor.main(async () => {
         lossyCompression,
         loslessCompression,
         fastMode = false,
+        outputFormat = 'gif',
         proxyOptions,
     } = input;
 
@@ -60,10 +63,28 @@ Actor.main(async () => {
         recordingTimeAfterClick,
         lossyCompression,
         loslessCompression,
+        outputFormat,
     });
 
-    let gifUrl;
+    let outputUrl;
     let errorMessage;
+
+    const describeCaptureStopReason = (captureCompleted, captureStopReason) => {
+        if (captureCompleted) return 'capture reached the bottom of the page';
+
+        switch (captureStopReason) {
+            case 'page_stopped_moving':
+                return 'capture stopped because the page stopped moving';
+            case 'max_steps_reached':
+                return 'capture stopped because the internal step limit was reached';
+            case 'max_duration_reached':
+                return 'capture stopped because the internal duration limit was reached';
+            case 'scroll_not_requested':
+                return 'capture finished without scrolling';
+            default:
+                return `capture stopped because of ${captureStopReason}`;
+        }
+    };
 
     // We do just single request but wrap in crawler for error retries
     const crawler = new PuppeteerCrawler({
@@ -102,6 +123,8 @@ Actor.main(async () => {
                 log.info(`Fast mode enabled, using ${captureConfig.frameRate} fps, ${captureConfig.scrollPercentage}% scroll steps, and skipping compression.`);
             }
 
+            log.info(`Output format: ${captureConfig.outputFormat}`);
+
             if (waitToLoadPage) {
                 await wait(waitToLoadPage);
             }
@@ -119,44 +142,40 @@ Actor.main(async () => {
                 }
             }
 
-            // set-up gif encoder
+            const outputMetadata = getOutputFormatMetadata(captureConfig.outputFormat);
+            const frameBuffers = captureConfig.outputFormat === 'gif' ? undefined : [];
             const chunks = [];
-            const gif = new GifEncoder(viewportWidth, viewportHeight);
+            let gif;
 
-            gif.setFrameRate(captureConfig.frameRate);
-            gif.setRepeat(0); // loop indefinitely
-            gif.on('data', (chunk) => chunks.push(chunk));
-            gif.writeHeader();
-
-            // add first frame multiple times so there is some delay before gif starts visually scrolling
-            await record(page, gif, captureConfig.recordingTimeBeforeAction, captureConfig.frameRate);
-
-            // start scrolling down and take screenshots
-            if (scrollDown) {
-                await scrollDownProcess({
-                    page,
-                    gif,
-                    viewportHeight,
-                    scrollPercentage: captureConfig.scrollPercentage,
-                });
+            if (captureConfig.outputFormat === 'gif') {
+                gif = new GifEncoder(viewportWidth, viewportHeight);
+                gif.setFrameRate(captureConfig.frameRate);
+                gif.setRepeat(0); // loop indefinitely
+                gif.on('data', (chunk) => chunks.push(chunk));
+                gif.writeHeader();
             }
 
-            // click element and record the action
             if (clickSelector) {
-                try {
-                    await page.waitForSelector(clickSelector, { timeout: 5000 });
-                    log.info(`Clicking element with selector ${clickSelector}`);
-                    await page.click(clickSelector);
-                } catch (err) {
-                    log.warning('Could not click on click button, click selector is likely incorrect. Continuing without click.');
-                }
-
-                await record(page, gif, captureConfig.recordingTimeAfterClick, captureConfig.frameRate);
+                await Actor.setStatusMessage(`Page loaded, performing pre-capture interaction before ${captureConfig.outputFormat.toUpperCase()} capture`);
+            } else {
+                await Actor.setStatusMessage(`Page loaded, recording ${modeLabel} ${captureConfig.outputFormat.toUpperCase()} capture`);
             }
 
-            const gifBufferPromise = getGifBuffer(gif, chunks);
-            gif.finish();
-            const gifBuffer = await gifBufferPromise;
+            const captureResult = await capturePage({
+                page,
+                gif,
+                viewportHeight,
+                captureConfig,
+                scrollDown,
+                clickSelector,
+                frameBuffers,
+            });
+            const captureSummary = describeCaptureStopReason(
+                captureResult.captureCompleted,
+                captureResult.captureStopReason,
+            );
+            log.info(`Capture summary: ${captureSummary}. Steps taken: ${captureResult.scrollStepsTaken}.`);
+            await Actor.setStatusMessage(`Capture finished: ${captureSummary}`);
 
             const urlObj = new URL(validUrl);
             const siteName = urlObj.hostname;
@@ -165,34 +184,59 @@ Actor.main(async () => {
             // Save to dataset so there is higher chance the user will find it
 
             const kvStore = await Actor.openKeyValueStore();
-
-            const filenameOrig = `${baseFileName}_original`;
-            await saveGif(filenameOrig, gifBuffer);
-            const gifUrlOriginal = kvStore.getPublicUrl(filenameOrig);
+            const filenameOrig = `${baseFileName}_original.${outputMetadata.extension}`;
+            let gifUrlOriginal;
             let gifUrlLossy;
             let gifUrlLosless;
-            gifUrl = gifUrlOriginal;
+            let videoUrlOriginal;
 
-            if (captureConfig.lossyCompression) {
-                const lossyBuffer = await compressGif(gifBuffer, 'lossy');
-                log.info('Lossy compression finished');
-                const filenameLossy = `${baseFileName}_lossy-comp`;
-                await saveGif(filenameLossy, lossyBuffer);
-                gifUrlLossy = kvStore.getPublicUrl(filenameLossy);
-            }
+            if (captureConfig.outputFormat === 'gif') {
+                const gifBufferPromise = getGifBuffer(gif, chunks);
+                gif.finish();
+                const gifBuffer = await gifBufferPromise;
 
-            if (captureConfig.loslessCompression) {
-                const loslessBuffer = await compressGif(gifBuffer, 'losless');
-                log.info('Losless compression finished');
-                const filenameLosless = `${baseFileName}_losless-comp`;
-                await saveGif(filenameLosless, loslessBuffer);
-                gifUrlLosless = kvStore.getPublicUrl(filenameLosless);
+                await saveGif(filenameOrig, gifBuffer);
+                gifUrlOriginal = kvStore.getPublicUrl(filenameOrig);
+                outputUrl = gifUrlOriginal;
+
+                if (captureConfig.lossyCompression) {
+                    const lossyBuffer = await compressGif(gifBuffer, 'lossy');
+                    log.info('Lossy compression finished');
+                    const filenameLossy = `${baseFileName}_lossy-comp.gif`;
+                    await saveGif(filenameLossy, lossyBuffer);
+                    gifUrlLossy = kvStore.getPublicUrl(filenameLossy);
+                }
+
+                if (captureConfig.loslessCompression) {
+                    const loslessBuffer = await compressGif(gifBuffer, 'losless');
+                    log.info('Losless compression finished');
+                    const filenameLosless = `${baseFileName}_losless-comp.gif`;
+                    await saveGif(filenameLosless, loslessBuffer);
+                    gifUrlLosless = kvStore.getPublicUrl(filenameLosless);
+                }
+            } else {
+                const videoBuffer = await encodeVideoFromFrames({
+                    frameBuffers,
+                    frameRate: captureConfig.frameRate,
+                    outputFormat: captureConfig.outputFormat,
+                });
+                await saveAsset(filenameOrig, videoBuffer, outputMetadata.contentType);
+                videoUrlOriginal = kvStore.getPublicUrl(filenameOrig);
+                outputUrl = videoUrlOriginal;
+                log.info(`Compression skipped for ${captureConfig.outputFormat.toUpperCase()} output.`);
             }
 
             await Actor.pushData(createDatasetResult({
+                outputFormat: captureConfig.outputFormat,
+                outputUrlOriginal: outputUrl,
+                outputMimeType: outputMetadata.contentType,
                 gifUrlOriginal,
                 gifUrlLossy,
                 gifUrlLosless,
+                videoUrlOriginal,
+                captureCompleted: captureResult.captureCompleted,
+                captureStopReason: captureResult.captureStopReason,
+                scrollStepsTaken: captureResult.scrollStepsTaken,
             }));
         },
         failedRequestHandler: async ({ request }) => {
@@ -206,9 +250,9 @@ Actor.main(async () => {
 
     await crawler.run([initRequest]);
 
-    if (gifUrl) {
-        await Actor.exit(`Gif created successfully. Gif URL: ${gifUrl}. Open dataset results for more details.`);
+    if (outputUrl) {
+        await Actor.exit(`${captureConfig.outputFormat.toUpperCase()} created successfully. Output URL: ${outputUrl}. Open dataset results for more details.`);
     } else {
-        await Actor.fail(`Could not create GIF because of error: ${errorMessage}`);
+        await Actor.fail(`Could not create ${captureConfig.outputFormat.toUpperCase()} because of error: ${errorMessage}`);
     }
 });

@@ -55,13 +55,13 @@
         "clickSelector": {
             "title": "Click selector",
             "type": "string",
-            "description": "Used to click an element and record it.",
+            "description": "Used to click an element before the GIF starts recording, for example to dismiss an age gate or open the desired page state.",
             "editor": "textfield"
         },
         "recordingTimeAfterClick": {
             "title": "Time to record after click",
             "type": "integer",
-            "description": "Amount of time to record the screen after clicking an element with the click selector.",
+            "description": "Amount of time to record after the pre-capture click and before scrolling begins.",
             "editor": "number",
             "unit": "ms"
         },
@@ -94,6 +94,24 @@
             "description": "Prioritizes time-to-result by using fewer frames, larger scroll steps, and skipping GIF compression.",
             "editor": "checkbox",
             "default": false
+        },
+        "outputFormat": {
+            "title": "Output format",
+            "type": "string",
+            "description": "Select the generated website preview format. GIF stays the default, while MP4 and WebM create video previews faster and at smaller file sizes.",
+            "editor": "select",
+            "default": "gif",
+            "prefill": "gif",
+            "enum": [
+                "gif",
+                "webm",
+                "mp4"
+            ],
+            "enumTitles": [
+                "GIF",
+                "WebM",
+                "MP4"
+            ]
         },
         "lossyCompression": {
             "title": "Lossy",
