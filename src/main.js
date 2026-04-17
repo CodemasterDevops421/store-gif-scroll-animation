@@ -9,6 +9,8 @@ import {
     compressGif,
     saveGif,
     slowDownAnimationsFn,
+    resolveCaptureConfig,
+    createDatasetResult,
 } from './helper.js';
 
 const wait = async (time) => {
@@ -38,6 +40,7 @@ Actor.main(async () => {
         recordingTimeAfterClick = 0,
         lossyCompression,
         loslessCompression,
+        fastMode = false,
         proxyOptions,
     } = input;
 
@@ -49,6 +52,15 @@ Actor.main(async () => {
     const validUrl = /^https?:\/\//i.test(url) ? url : `https://${url}`;
 
     const proxyConfiguration = await Actor.createProxyConfiguration(proxyOptions);
+    const captureConfig = resolveCaptureConfig({
+        fastMode,
+        frameRate,
+        scrollPercentage,
+        recordingTimeBeforeAction,
+        recordingTimeAfterClick,
+        lossyCompression,
+        loslessCompression,
+    });
 
     let gifUrl;
     let errorMessage;
@@ -81,8 +93,14 @@ Actor.main(async () => {
             },
         ],
         requestHandler: async ({ page }) => {
-            await Actor.setStatusMessage('Page loaded, starting gif recording');
+            const modeLabel = captureConfig.fastMode ? 'fast mode' : 'standard mode';
+            await Actor.setStatusMessage(`Page loaded, starting gif recording in ${modeLabel}`);
             log.info(`Setting page viewport to ${viewportWidth}x${viewportHeight}`);
+            log.info(`Capture mode: ${modeLabel}`);
+
+            if (captureConfig.fastMode) {
+                log.info(`Fast mode enabled, using ${captureConfig.frameRate} fps, ${captureConfig.scrollPercentage}% scroll steps, and skipping compression.`);
+            }
 
             if (waitToLoadPage) {
                 await wait(waitToLoadPage);
@@ -105,17 +123,22 @@ Actor.main(async () => {
             const chunks = [];
             const gif = new GifEncoder(viewportWidth, viewportHeight);
 
-            gif.setFrameRate(frameRate);
+            gif.setFrameRate(captureConfig.frameRate);
             gif.setRepeat(0); // loop indefinitely
             gif.on('data', (chunk) => chunks.push(chunk));
             gif.writeHeader();
 
             // add first frame multiple times so there is some delay before gif starts visually scrolling
-            await record(page, gif, recordingTimeBeforeAction, frameRate);
+            await record(page, gif, captureConfig.recordingTimeBeforeAction, captureConfig.frameRate);
 
             // start scrolling down and take screenshots
             if (scrollDown) {
-                await scrollDownProcess({ page, gif, viewportHeight, scrollPercentage });
+                await scrollDownProcess({
+                    page,
+                    gif,
+                    viewportHeight,
+                    scrollPercentage: captureConfig.scrollPercentage,
+                });
             }
 
             // click element and record the action
@@ -128,7 +151,7 @@ Actor.main(async () => {
                     log.warning('Could not click on click button, click selector is likely incorrect. Continuing without click.');
                 }
 
-                await record(page, gif, recordingTimeAfterClick, frameRate);
+                await record(page, gif, captureConfig.recordingTimeAfterClick, captureConfig.frameRate);
             }
 
             const gifBufferPromise = getGifBuffer(gif, chunks);
@@ -141,35 +164,36 @@ Actor.main(async () => {
 
             // Save to dataset so there is higher chance the user will find it
 
-            const toPushDataset = {
-                gifUrlOriginal: undefined,
-                gifUrlLossy: undefined,
-                gifUrlLosless: undefined,
-            };
             const kvStore = await Actor.openKeyValueStore();
 
             const filenameOrig = `${baseFileName}_original`;
             await saveGif(filenameOrig, gifBuffer);
-            toPushDataset.gifUrlOriginal = kvStore.getPublicUrl(filenameOrig);
-            gifUrl = toPushDataset.gifUrlOriginal;
+            const gifUrlOriginal = kvStore.getPublicUrl(filenameOrig);
+            let gifUrlLossy;
+            let gifUrlLosless;
+            gifUrl = gifUrlOriginal;
 
-            if (lossyCompression) {
+            if (captureConfig.lossyCompression) {
                 const lossyBuffer = await compressGif(gifBuffer, 'lossy');
                 log.info('Lossy compression finished');
                 const filenameLossy = `${baseFileName}_lossy-comp`;
                 await saveGif(filenameLossy, lossyBuffer);
-                toPushDataset.gifUrlLossy = kvStore.getPublicUrl(filenameLossy);
+                gifUrlLossy = kvStore.getPublicUrl(filenameLossy);
             }
 
-            if (loslessCompression) {
+            if (captureConfig.loslessCompression) {
                 const loslessBuffer = await compressGif(gifBuffer, 'losless');
                 log.info('Losless compression finished');
                 const filenameLosless = `${baseFileName}_losless-comp`;
                 await saveGif(filenameLosless, loslessBuffer);
-                toPushDataset.gifUrlLosless = kvStore.getPublicUrl(filenameLosless);
+                gifUrlLosless = kvStore.getPublicUrl(filenameLosless);
             }
 
-            await Actor.pushData(toPushDataset);
+            await Actor.pushData(createDatasetResult({
+                gifUrlOriginal,
+                gifUrlLossy,
+                gifUrlLosless,
+            }));
         },
         failedRequestHandler: async ({ request }) => {
             // Print last error message as status code if complete fail happens

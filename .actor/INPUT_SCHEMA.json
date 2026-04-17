@@ -88,6 +88,13 @@
             "editor": "checkbox",
             "default": false
         },
+        "fastMode": {
+            "title": "Fast mode",
+            "type": "boolean",
+            "description": "Prioritizes time-to-result by using fewer frames, larger scroll steps, and skipping GIF compression.",
+            "editor": "checkbox",
+            "default": false
+        },
         "lossyCompression": {
             "title": "Lossy",
             "type": "boolean",

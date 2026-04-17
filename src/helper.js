@@ -6,6 +6,9 @@ import imageminGiflossy from 'imagemin-giflossy';
 import imageminGifsicle from 'imagemin-gifsicle';
 
 const wait = async (time) => new Promise((resolve) => setTimeout(resolve, time));
+const FAST_MODE_MIN_SCROLL_PERCENTAGE = 25;
+const FAST_MODE_MAX_FRAME_RATE = 4;
+const FAST_MODE_MAX_RECORDING_MS = 250;
 
 const takeScreenshot = async (page) => {
     log.info('Taking screenshot');
@@ -61,54 +64,64 @@ export const record = async (page, gif, recordingTime, frameRate) => {
     }
 };
 
-export const getScrollParameters = async ({ page, viewportHeight, scrollPercentage }) => {
-    const { pageHeight, scrollTop, clientHeight } = await page.evaluate(() => {
-        const docRoot = document.scrollingElement || document.documentElement || document.body;
-        const isElementScrollable = (element) => {
-            if (!element || !(element instanceof Element)) return false;
-
-            const style = window.getComputedStyle(element);
-            const canScroll = /(auto|scroll|overlay)/.test(style.overflowY || '')
-                || /(auto|scroll|overlay)/.test(style.overflow || '');
-
-            return canScroll && (element.scrollHeight - element.clientHeight > 1);
+export const resolveCaptureConfig = ({
+    fastMode = false,
+    frameRate = 7,
+    scrollPercentage = 10,
+    recordingTimeBeforeAction = 1000,
+    recordingTimeAfterClick = 0,
+    lossyCompression = true,
+    loslessCompression = false,
+}) => {
+    if (!fastMode) {
+        return {
+            fastMode: false,
+            frameRate,
+            scrollPercentage,
+            recordingTimeBeforeAction,
+            recordingTimeAfterClick,
+            lossyCompression,
+            loslessCompression,
         };
+    }
 
-        let scrollRoot = window.__GIF_SCROLL_ROOT_ELEMENT;
-        if (!scrollRoot || !(scrollRoot instanceof Element) || !document.contains(scrollRoot)) {
-            const candidates = [
-                docRoot,
-                document.documentElement,
-                document.body,
-                ...document.querySelectorAll('*'),
-            ].filter(Boolean);
+    return {
+        fastMode: true,
+        frameRate: Math.max(1, Math.min(frameRate, FAST_MODE_MAX_FRAME_RATE)),
+        scrollPercentage: Math.max(scrollPercentage, FAST_MODE_MIN_SCROLL_PERCENTAGE),
+        recordingTimeBeforeAction: Math.min(recordingTimeBeforeAction, FAST_MODE_MAX_RECORDING_MS),
+        recordingTimeAfterClick: Math.min(recordingTimeAfterClick, FAST_MODE_MAX_RECORDING_MS),
+        lossyCompression: false,
+        loslessCompression: false,
+    };
+};
 
-            scrollRoot = candidates
-                .filter(isElementScrollable)
-                .sort((left, right) => (right.scrollHeight - right.clientHeight) - (left.scrollHeight - left.clientHeight))[0] || docRoot;
-
-            window.__GIF_SCROLL_ROOT_ELEMENT = scrollRoot;
-        }
-
-        const usesDocumentScrollRoot = scrollRoot === docRoot
-            || scrollRoot === document.documentElement
-            || scrollRoot === document.body;
-        const effectiveScrollTop = usesDocumentScrollRoot
-            ? (window.pageYOffset || docRoot.scrollTop || document.documentElement.scrollTop || document.body.scrollTop || 0)
-            : scrollRoot.scrollTop;
-        const effectiveClientHeight = usesDocumentScrollRoot
-            ? (window.innerHeight || document.documentElement.clientHeight || scrollRoot.clientHeight || 0)
-            : scrollRoot.clientHeight;
-        const effectiveScrollHeight = Math.max(scrollRoot.scrollHeight, effectiveClientHeight);
+export const getScrollParameters = async ({ page, viewportHeight, scrollPercentage }) => {
+    const { pageHeight, scrollTop } = await page.evaluate(() => {
+        // This actor intentionally captures page-level scrolling only.
+        // Nested scroll containers are out of scope because viewport screenshots
+        // cannot safely represent arbitrary inner scrollers without dedicated cropping.
+        const scrollRoot = document.scrollingElement || document.documentElement || document.body;
+        const fallbackRoot = scrollRoot === document.body ? document.documentElement : document.body;
+        const effectiveScrollTop = window.pageYOffset
+            || scrollRoot.scrollTop
+            || fallbackRoot.scrollTop
+            || 0;
+        const effectiveScrollHeight = Math.max(
+            scrollRoot.scrollHeight || 0,
+            fallbackRoot.scrollHeight || 0,
+            document.documentElement.scrollHeight || 0,
+            document.body.scrollHeight || 0,
+            window.innerHeight || 0,
+        );
 
         return {
             pageHeight: effectiveScrollHeight,
             scrollTop: effectiveScrollTop,
-            clientHeight: effectiveClientHeight,
         };
     });
 
-    const effectiveViewportHeight = Math.max(1, Math.min(viewportHeight, clientHeight || viewportHeight));
+    const effectiveViewportHeight = Math.max(1, viewportHeight);
     const initialPosition = effectiveViewportHeight + scrollTop;
     const scrollByAmount = Math.max(1, Math.round(effectiveViewportHeight * scrollPercentage / 100));
 
@@ -116,7 +129,6 @@ export const getScrollParameters = async ({ page, viewportHeight, scrollPercenta
         pageHeight,
         initialPosition,
         scrollByAmount,
-        viewportHeight: effectiveViewportHeight,
     };
 };
 
@@ -135,14 +147,6 @@ export const scrollDownProcess = async ({ page, gif, viewportHeight, scrollPerce
 
         log.info(`Scrolling down by ${scrollByAmount} pixels`);
         await page.evaluate((scrollByAmount) => {
-            const docRoot = document.scrollingElement || document.documentElement || document.body;
-            const scrollRoot = window.__GIF_SCROLL_ROOT_ELEMENT;
-
-            if (scrollRoot && scrollRoot instanceof Element && scrollRoot !== docRoot && document.contains(scrollRoot)) {
-                scrollRoot.scrollBy(0, scrollByAmount);
-                return;
-            }
-
             window.scrollBy(0, scrollByAmount);
         }, scrollByAmount);
 
@@ -168,6 +172,21 @@ export const getGifBuffer = (gif, chunks) => {
         gif.once('end', () => resolve(Buffer.concat(chunks)));
         gif.once('error', (error) => reject(error));
     });
+};
+
+export const createDatasetResult = ({
+    gifUrlOriginal,
+    gifUrlLossy,
+    gifUrlLosless,
+}) => {
+    const result = {
+        gifUrlOriginal,
+    };
+
+    if (gifUrlLossy) result.gifUrlLossy = gifUrlLossy;
+    if (gifUrlLosless) result.gifUrlLosless = gifUrlLosless;
+
+    return result;
 };
 
 const selectPlugin = (compressionType) => {
