@@ -19,7 +19,7 @@
 	},
 	"scripts": {
 		"start": "node src/main.js",
-		"test": "echo \"Error: oops, the actor has no tests yet, sad!\" && exit 1"
+		"test": "node --test"
 	},
 	"author": "Glenn Goossens",
 	"license": "ISC"

@@ -62,22 +62,70 @@ export const record = async (page, gif, recordingTime, frameRate) => {
 };
 
 export const getScrollParameters = async ({ page, viewportHeight, scrollPercentage }) => {
-    // get page height to determine when we scrolled to the bottom
-    const pageHeight = await page.evaluate(() => document.documentElement.scrollHeight); // initially used body element height via .boundingbox() but this is not always equal to document height
-    const scrollTop = await page.evaluate(() => document.documentElement.scrollTop);
+    const { pageHeight, scrollTop, clientHeight } = await page.evaluate(() => {
+        const docRoot = document.scrollingElement || document.documentElement || document.body;
+        const isElementScrollable = (element) => {
+            if (!element || !(element instanceof Element)) return false;
 
-    const initialPosition = viewportHeight + scrollTop;
-    const scrollByAmount = Math.max(1, Math.round(viewportHeight * scrollPercentage / 100));
+            const style = window.getComputedStyle(element);
+            const canScroll = /(auto|scroll|overlay)/.test(style.overflowY || '')
+                || /(auto|scroll|overlay)/.test(style.overflow || '');
+
+            return canScroll && (element.scrollHeight - element.clientHeight > 1);
+        };
+
+        let scrollRoot = window.__GIF_SCROLL_ROOT_ELEMENT;
+        if (!scrollRoot || !(scrollRoot instanceof Element) || !document.contains(scrollRoot)) {
+            const candidates = [
+                docRoot,
+                document.documentElement,
+                document.body,
+                ...document.querySelectorAll('*'),
+            ].filter(Boolean);
+
+            scrollRoot = candidates
+                .filter(isElementScrollable)
+                .sort((left, right) => (right.scrollHeight - right.clientHeight) - (left.scrollHeight - left.clientHeight))[0] || docRoot;
+
+            window.__GIF_SCROLL_ROOT_ELEMENT = scrollRoot;
+        }
+
+        const usesDocumentScrollRoot = scrollRoot === docRoot
+            || scrollRoot === document.documentElement
+            || scrollRoot === document.body;
+        const effectiveScrollTop = usesDocumentScrollRoot
+            ? (window.pageYOffset || docRoot.scrollTop || document.documentElement.scrollTop || document.body.scrollTop || 0)
+            : scrollRoot.scrollTop;
+        const effectiveClientHeight = usesDocumentScrollRoot
+            ? (window.innerHeight || document.documentElement.clientHeight || scrollRoot.clientHeight || 0)
+            : scrollRoot.clientHeight;
+        const effectiveScrollHeight = Math.max(scrollRoot.scrollHeight, effectiveClientHeight);
+
+        return {
+            pageHeight: effectiveScrollHeight,
+            scrollTop: effectiveScrollTop,
+            clientHeight: effectiveClientHeight,
+        };
+    });
+
+    const effectiveViewportHeight = Math.max(1, Math.min(viewportHeight, clientHeight || viewportHeight));
+    const initialPosition = effectiveViewportHeight + scrollTop;
+    const scrollByAmount = Math.max(1, Math.round(effectiveViewportHeight * scrollPercentage / 100));
 
     return {
         pageHeight,
         initialPosition,
         scrollByAmount,
+        viewportHeight: effectiveViewportHeight,
     };
 };
 
 export const scrollDownProcess = async ({ page, gif, viewportHeight, scrollPercentage }) => {
-    const { pageHeight, initialPosition, scrollByAmount } = await getScrollParameters({ page, viewportHeight, scrollPercentage });
+    let {
+        pageHeight,
+        initialPosition,
+        scrollByAmount,
+    } = await getScrollParameters({ page, viewportHeight, scrollPercentage });
     let scrolledUntil = initialPosition;
 
     while (pageHeight > scrolledUntil) {
@@ -87,17 +135,27 @@ export const scrollDownProcess = async ({ page, gif, viewportHeight, scrollPerce
 
         log.info(`Scrolling down by ${scrollByAmount} pixels`);
         await page.evaluate((scrollByAmount) => {
+            const docRoot = document.scrollingElement || document.documentElement || document.body;
+            const scrollRoot = window.__GIF_SCROLL_ROOT_ELEMENT;
+
+            if (scrollRoot && scrollRoot instanceof Element && scrollRoot !== docRoot && document.contains(scrollRoot)) {
+                scrollRoot.scrollBy(0, scrollByAmount);
+                return;
+            }
+
             window.scrollBy(0, scrollByAmount);
         }, scrollByAmount);
 
-        const scrollTopAfterScroll = await page.evaluate(() => document.documentElement.scrollTop);
-        const currentViewportBottom = viewportHeight + scrollTopAfterScroll;
+        const updatedScrollState = await getScrollParameters({ page, viewportHeight, scrollPercentage });
+        const currentViewportBottom = updatedScrollState.initialPosition;
 
         if (currentViewportBottom <= scrolledUntil) {
             log.warning('Page did not scroll any further, stopping scroll capture early.');
             break;
         }
 
+        pageHeight = updatedScrollState.pageHeight;
+        scrollByAmount = updatedScrollState.scrollByAmount;
         scrolledUntil = currentViewportBottom;
     }
 
