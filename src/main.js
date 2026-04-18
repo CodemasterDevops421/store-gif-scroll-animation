@@ -13,6 +13,7 @@ import {
     createDatasetResult,
     encodeVideoFromFrames,
     getOutputFormatMetadata,
+    buildOutputFileName,
 } from './helper.js';
 
 const wait = async (time) => {
@@ -184,7 +185,11 @@ Actor.main(async () => {
             // Save to dataset so there is higher chance the user will find it
 
             const kvStore = await Actor.openKeyValueStore();
-            const filenameOrig = `${baseFileName}_original.${outputMetadata.extension}`;
+            const filenameOrig = buildOutputFileName({
+                baseFileName,
+                variant: 'original',
+                extension: outputMetadata.extension,
+            });
             let gifUrlOriginal;
             let gifUrlLossy;
             let gifUrlLosless;
@@ -202,7 +207,11 @@ Actor.main(async () => {
                 if (captureConfig.lossyCompression) {
                     const lossyBuffer = await compressGif(gifBuffer, 'lossy');
                     log.info('Lossy compression finished');
-                    const filenameLossy = `${baseFileName}_lossy-comp.gif`;
+                    const filenameLossy = buildOutputFileName({
+                        baseFileName,
+                        variant: 'lossy-comp',
+                        extension: 'gif',
+                    });
                     await saveGif(filenameLossy, lossyBuffer);
                     gifUrlLossy = kvStore.getPublicUrl(filenameLossy);
                 }
@@ -210,7 +219,11 @@ Actor.main(async () => {
                 if (captureConfig.loslessCompression) {
                     const loslessBuffer = await compressGif(gifBuffer, 'losless');
                     log.info('Losless compression finished');
-                    const filenameLosless = `${baseFileName}_losless-comp.gif`;
+                    const filenameLosless = buildOutputFileName({
+                        baseFileName,
+                        variant: 'losless-comp',
+                        extension: 'gif',
+                    });
                     await saveGif(filenameLosless, loslessBuffer);
                     gifUrlLosless = kvStore.getPublicUrl(filenameLosless);
                 }

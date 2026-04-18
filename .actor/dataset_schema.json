@@ -1,0 +1,155 @@
+{
+    "actorSpecification": 1,
+    "fields": {
+        "$schema": "http://json-schema.org/draft-07/schema#",
+        "type": "object",
+        "properties": {
+            "outputFormat": {
+                "type": "string",
+                "title": "Output format",
+                "description": "The generated preview format returned by the actor.",
+                "enum": ["gif", "webm", "mp4"],
+                "nullable": true,
+                "example": "gif"
+            },
+            "outputUrlOriginal": {
+                "type": "string",
+                "title": "Primary output URL",
+                "description": "Public URL of the main generated preview asset.",
+                "nullable": true,
+                "example": "https://api.apify.com/v2/key-value-stores/example-store/records/preview-example.com-scroll_original.gif"
+            },
+            "outputMimeType": {
+                "type": "string",
+                "title": "Primary MIME type",
+                "description": "MIME type of the main generated preview asset.",
+                "enum": ["image/gif", "video/webm", "video/mp4"],
+                "nullable": true,
+                "example": "image/gif"
+            },
+            "captureCompleted": {
+                "type": "boolean",
+                "title": "Capture completed",
+                "description": "Whether the capture reached the bottom of the page or finished without needing to scroll.",
+                "nullable": true,
+                "example": true
+            },
+            "captureStopReason": {
+                "type": "string",
+                "title": "Capture stop reason",
+                "description": "Internal reason explaining why the capture stopped.",
+                "enum": [
+                    "bottom_reached",
+                    "page_stopped_moving",
+                    "max_steps_reached",
+                    "max_duration_reached",
+                    "scroll_not_requested"
+                ],
+                "nullable": true,
+                "example": "bottom_reached"
+            },
+            "scrollStepsTaken": {
+                "type": "integer",
+                "title": "Scroll steps taken",
+                "description": "Number of scroll steps performed during capture.",
+                "nullable": true,
+                "example": 14
+            },
+            "gifUrlOriginal": {
+                "type": "string",
+                "title": "Original GIF URL",
+                "description": "Public URL of the original GIF output when GIF format is selected.",
+                "nullable": true,
+                "example": "https://api.apify.com/v2/key-value-stores/example-store/records/preview-example.com-scroll_original.gif"
+            },
+            "gifUrlLossy": {
+                "type": "string",
+                "title": "Lossy GIF URL",
+                "description": "Public URL of the lossy-compressed GIF variant when enabled.",
+                "nullable": true,
+                "example": "https://api.apify.com/v2/key-value-stores/example-store/records/preview-example.com-scroll_lossy-comp.gif"
+            },
+            "gifUrlLosless": {
+                "type": "string",
+                "title": "Lossless GIF URL",
+                "description": "Public URL of the lossless-compressed GIF variant when enabled.",
+                "nullable": true,
+                "example": "https://api.apify.com/v2/key-value-stores/example-store/records/preview-example.com-scroll_losless-comp.gif"
+            },
+            "videoUrlOriginal": {
+                "type": "string",
+                "title": "Original video URL",
+                "description": "Public URL of the generated video output when MP4 or WebM format is selected.",
+                "nullable": true,
+                "example": "https://api.apify.com/v2/key-value-stores/example-store/records/preview-example.com-scroll_original.webm"
+            }
+        },
+        "required": [],
+        "additionalProperties": true
+    },
+    "views": {
+        "overview": {
+            "title": "Overview",
+            "description": "Primary preview output links and capture status.",
+            "transformation": {
+                "fields": [
+                    "outputFormat",
+                    "outputUrlOriginal",
+                    "outputMimeType",
+                    "captureCompleted",
+                    "captureStopReason",
+                    "scrollStepsTaken",
+                    "gifUrlOriginal",
+                    "videoUrlOriginal",
+                    "gifUrlLossy",
+                    "gifUrlLosless"
+                ]
+            },
+            "display": {
+                "component": "table",
+                "properties": {
+                    "outputFormat": {
+                        "label": "Format",
+                        "format": "text"
+                    },
+                    "outputUrlOriginal": {
+                        "label": "Primary output",
+                        "format": "link"
+                    },
+                    "outputMimeType": {
+                        "label": "MIME type",
+                        "format": "text"
+                    },
+                    "captureCompleted": {
+                        "label": "Completed",
+                        "format": "boolean"
+                    },
+                    "captureStopReason": {
+                        "label": "Stop reason",
+                        "format": "text"
+                    },
+                    "scrollStepsTaken": {
+                        "label": "Scroll steps",
+                        "format": "number"
+                    },
+                    "gifUrlOriginal": {
+                        "label": "Original GIF",
+                        "format": "link"
+                    },
+                    "videoUrlOriginal": {
+                        "label": "Original video",
+                        "format": "link"
+                    },
+                    "gifUrlLossy": {
+                        "label": "Lossy GIF",
+                        "format": "link"
+                    },
+                    "gifUrlLosless": {
+                        "label": "Lossless GIF",
+                        "format": "link"
+                    }
+                }
+            }
+        }
+    }
+}

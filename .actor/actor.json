@@ -1,6 +1,19 @@
 {
 	"actorSpecification": 1,
 	"name": "gif-scroll-animation",
+	"title": "GIF Scroll Animation",
+	"description": "Capture scrolling website previews as GIF, WebM, or MP4 and expose the generated assets through dataset and key-value store output schemas.",
 	"version": "0.0",
-	"buildTag": "latest"
+	"buildTag": "latest",
+	"meta": {
+		"generatedBy": "OpenAI Codex GPT-5"
+	},
+	"input": "./INPUT_SCHEMA.json",
+	"output": "./output_schema.json",
+	"readme": "../README.md",
+	"changelog": "../CHANGELOG.md",
+	"storages": {
+		"dataset": "./dataset_schema.json",
+		"keyValueStore": "./key_value_store_schema.json"
+	}
 }

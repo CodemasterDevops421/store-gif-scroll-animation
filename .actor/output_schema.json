@@ -1,0 +1,19 @@
+{
+    "actorOutputSchemaVersion": 1,
+    "title": "Website preview output",
+    "description": "Links to the dataset rows and generated preview assets produced by the actor.",
+    "properties": {
+        "dataset": {
+            "type": "string",
+            "title": "Results",
+            "description": "Dataset containing generated preview metadata and asset URLs.",
+            "template": "{{links.apiDefaultDatasetUrl}}/items"
+        },
+        "files": {
+            "type": "string",
+            "title": "Files",
+            "description": "Key-value store containing generated GIF, WebM, and MP4 files.",
+            "template": "{{links.apiDefaultKeyValueStoreUrl}}/keys"
+        }
+    }
+}

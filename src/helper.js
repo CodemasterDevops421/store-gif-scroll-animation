@@ -176,6 +176,14 @@ export const capturePage = async ({
     scrollFn = scrollDownProcess,
     clickTimeoutMs = 5000,
 }) => {
+    await recordFn(
+        page,
+        gif,
+        captureConfig.recordingTimeBeforeAction,
+        captureConfig.frameRate,
+        frameBuffers,
+    );
+
     if (clickSelector) {
         try {
             await page.waitForSelector(clickSelector, { timeout: clickTimeoutMs });
@@ -186,8 +194,6 @@ export const capturePage = async ({
         }
 
         await recordFn(page, gif, captureConfig.recordingTimeAfterClick, captureConfig.frameRate, frameBuffers);
-    } else {
-        await recordFn(page, gif, captureConfig.recordingTimeBeforeAction, captureConfig.frameRate, frameBuffers);
     }
 
     if (scrollDown) {
@@ -449,6 +455,10 @@ export const createDatasetResult = ({
     }
 
     return result;
+};
+
+export const buildOutputFileName = ({ baseFileName, variant, extension }) => {
+    return `preview-${baseFileName}_${variant}.${extension}`;
 };
 
 const selectPlugin = (compressionType) => {

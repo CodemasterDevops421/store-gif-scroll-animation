@@ -41,8 +41,8 @@ For extremely long pages or pages that keep extending while scrolling, the actor
 | scrollDown | boolean | Yes |  | When true, the actor will scroll down the page and capture it to create the GIF. |
 | scrollPercentage | integer | No | 10 | Amount to scroll down determined as a percentage of the viewport height. (%) |
 | recordingTimeBeforeAction | integer | No | 1 | Amount of time to capture the screen before doing any action like scrolling down or clicking. (ms) | 
-| clickSelector | integer | No |  | Used to click an element before recording starts, for example to dismiss an age gate or open the desired page state. |
-| recordingTimeAfterClick | integer | No | Amount of time to record after the pre-capture click and before scrolling begins. | 
+| clickSelector | string | No |  | Used to click an element before recording starts, for example to dismiss an age gate or open the desired page state. |
+| recordingTimeAfterClick | integer | No | 0 | Amount of time to record after the pre-capture click and before scrolling begins. (ms) |
 | waitToLoadPage | integer | No | 0 | Set time to wait at the beginning so that page is fully loaded (ms). |  
 | cookieWindowSelector | string | No | | CSS selector to remove cookie pop-up window if one is present. |
 | slowDownAnimations | boolean | No | false |When selected, slows down animations on the page so they can be properly captured. |
@@ -57,9 +57,12 @@ For extremely long pages or pages that keep extending while scrolling, the actor
 ```json
 {
   "url": "https://www.franshalsmuseum.nl/en/",
-    "frameRate": 7,
-    "scrollDown": true,
-    "recordingTimeBeforeAction": 1500,
-    "cookieWindowSelector": ".cookiebar"
+  "frameRate": 7,
+  "scrollDown": true,
+  "recordingTimeBeforeAction": 1500,
+  "cookieWindowSelector": ".cookiebar"
 }
 ```
+
+## Dataset fields
+Each run stores a dataset item with the generated asset links and capture status. The main fields are `outputFormat`, `outputUrlOriginal`, `outputMimeType`, `captureCompleted`, `captureStopReason`, `scrollStepsTaken`, `gifUrlOriginal`, `gifUrlLossy`, `gifUrlLosless`, and `videoUrlOriginal`.

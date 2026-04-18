@@ -1,0 +1,17 @@
+{
+    "actorKeyValueStoreSchemaVersion": 1,
+    "title": "Preview assets",
+    "description": "Key-value store records containing generated website preview assets.",
+    "collections": {
+        "previewAssets": {
+            "title": "Preview assets",
+            "description": "Generated GIF, WebM, and MP4 preview files saved by the actor.",
+            "keyPrefix": "preview-",
+            "contentTypes": [
+                "image/gif",
+                "video/webm",
+                "video/mp4"
+            ]
+        }
+    }
+}

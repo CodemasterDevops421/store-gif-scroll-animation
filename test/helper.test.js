@@ -4,6 +4,7 @@ import test from 'node:test';
 import { log } from 'apify';
 
 import {
+    buildOutputFileName,
     capturePage,
     createDatasetResult,
     getGifBuffer,
@@ -181,7 +182,18 @@ test('getOutputFormatMetadata returns MIME details for video output', () => {
     });
 });
 
-test('capturePage clicks before the first record call', async () => {
+test('buildOutputFileName uses a stable preview prefix for key-value store assets', () => {
+    assert.equal(
+        buildOutputFileName({
+            baseFileName: 'example.com-scroll',
+            variant: 'original',
+            extension: 'gif',
+        }),
+        'preview-example.com-scroll_original.gif',
+    );
+});
+
+test('capturePage records before and after the pre-capture click', async () => {
     const events = [];
     const page = {
         waitForSelector: async () => events.push('waitForSelector'),
@@ -200,10 +212,10 @@ test('capturePage clicks before the first record call', async () => {
             recordingTimeBeforeAction: 1000,
             recordingTimeAfterClick: 500,
         },
-        recordFn: async () => events.push('record'),
+        recordFn: async (_page, _gif, recordingTime) => events.push(`record:${recordingTime}`),
     });
 
-    assert.deepEqual(events, ['waitForSelector', 'click', 'record']);
+    assert.deepEqual(events, ['record:1000', 'waitForSelector', 'click', 'record:500']);
 });
 
 test('capturePage starts scroll only after the pre-capture click path finishes', async () => {
@@ -229,7 +241,7 @@ test('capturePage starts scroll only after the pre-capture click path finishes',
         scrollFn: async () => events.push('scroll'),
     });
 
-    assert.deepEqual(events, ['waitForSelector', 'click', 'record', 'scroll']);
+    assert.deepEqual(events, ['record', 'waitForSelector', 'click', 'record', 'scroll']);
 });
 
 test('capturePage continues when the pre-capture selector is invalid', async () => {
@@ -262,7 +274,7 @@ test('capturePage continues when the pre-capture selector is invalid', async () 
             scrollFn: async () => events.push('scroll'),
         });
 
-        assert.deepEqual(events, ['record', 'scroll']);
+        assert.deepEqual(events, ['record', 'record', 'scroll']);
         assert.equal(warnings.length, 1);
     } finally {
         log.warning = originalWarning;
@@ -294,7 +306,7 @@ test('capturePage uses recordingTimeAfterClick before scrolling', async () => {
         scrollFn: async () => {},
     });
 
-    assert.deepEqual(recordingTimes, [250]);
+    assert.deepEqual(recordingTimes, [1000, 250]);
 });
 
 test('capturePage returns completion metadata when scrolling is disabled', async () => {
